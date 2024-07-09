@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.lang.Math;
 
 public class KakomimasuAI {
 
@@ -26,6 +25,7 @@ public class KakomimasuAI {
             var game = objectMapper.readTree(startResponse);
             var gameId = game.get("gameId").asText();
             var pic = game.get("pic").asText();
+
             // 赤忍者を待つ
             while (true) {
                 var waitStartURL = URI.create(baseUrl + "/v1/matches/" + gameId);
@@ -41,7 +41,7 @@ public class KakomimasuAI {
             var opsec = game.get("operationSec").asInt();
             var trsec = game.get("transitionSec").asInt();
             // 1ターン目を待つ
-            var startSleepTime = Math.max(start * 1000 - System.currentTimeMillis(), 0);
+            var startSleepTime = Math.max(start - System.currentTimeMillis(), 0);
 			System.out.println("startSleepTime = " + startSleepTime);
             Thread.sleep(startSleepTime);
             // メインループ
@@ -144,7 +144,6 @@ public class KakomimasuAI {
 				if (state.character.x == -1) {
 					action1 = Map.of("agentId", 0, "type", "PUT", "x", 4, "y", 4);
 				} else {
-                    var dx = State.dx[best]
 					var nx = Math.random() > 0.5 ? state.character.x-1 : state.character.x+1;
 					var ny = Math.random() > 0.5 ? state.character.y-1 : state.character.y+1;
 					action1 = Map.of("agentId", 0, "type", "MOVE", "x", nx, "y", ny);

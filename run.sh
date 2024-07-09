@@ -1,3 +1,4 @@
 #!/bin/bash
 
-sbt run
+mvn clean package
+java -jar target/kakomimasu-ai-1.0.jar
