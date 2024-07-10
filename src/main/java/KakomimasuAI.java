@@ -74,7 +74,9 @@ public class KakomimasuAI {
                 state.character.y = agent.get("y").asInt();
                 var points = game.get("field").get("points");
                 var tiles = game.get("field").get("tiles");
+                var enemyTiles = new boolean[state.h][];
                 for (var y = 0; y < state.h; y++) {
+                    enemyTiles[y] = new boolean[state.w];
                     for (var x = 0; x < state.w; x++) {
                         var idx = state.w * y + x;
                         var tile = tiles.get(idx);
@@ -85,6 +87,7 @@ public class KakomimasuAI {
                         if (!(type == 1 && player == 0)) {
                             newPoint = point;
                         }
+                        enemyTiles[y][x] = type == 1 && player == 1;
                         state.points[y][x] = newPoint;
                     }
                 }
@@ -97,7 +100,7 @@ public class KakomimasuAI {
                 var beamStartTime = System.currentTimeMillis();
                 if (state.character.x != -1) {
                     var beamWidth = 10000;
-                    var beamDepth = 30;
+                    var beamDepth = 10;
                     var nowBeam = new PriorityQueue<State>(Comparator.comparingLong(s -> -s.evaluatedScore));
                     State bestState = null;
                     nowBeam.add(state);
@@ -141,7 +144,8 @@ public class KakomimasuAI {
 				} else {
 					var nx = state.character.x + bestdx;
 					var ny = state.character.y + bestdy;
-					action1 = Map.of("agentId", 0, "type", "MOVE", "x", nx, "y", ny);
+                    var type = enemyTiles[ny][nx] ? "REMOVE" : "MOVE";
+					action1 = Map.of("agentId", 0, "type", type, "x", nx, "y", ny);
 				}
 				if (action1 != null) {
 					var actions = List.of(action1);
