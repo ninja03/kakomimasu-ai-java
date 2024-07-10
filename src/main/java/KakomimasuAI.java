@@ -25,7 +25,7 @@ public class KakomimasuAI {
             var game = objectMapper.readTree(startResponse);
             var gameId = game.get("gameId").asText();
             var pic = game.get("pic").asText();
-
+            
             // 赤忍者を待つ
             while (true) {
                 var waitStartURL = URI.create(baseUrl + "/v1/matches/" + gameId);
@@ -37,9 +37,9 @@ public class KakomimasuAI {
                 }
                 Thread.sleep(100);
             }            
-            var start = game.get("startedAtUnixTime").asLong();
-            var opsec = game.get("operationSec").asInt();
-            var trsec = game.get("transitionSec").asInt();
+            var start = game.get("startedAtUnixTime").asLong() * 1000;
+            var opsec = game.get("operationSec").asInt() * 1000;
+            var trsec = game.get("transitionSec").asInt() * 1000;
             // 1ターン目を待つ
             var startSleepTime = Math.max(start - System.currentTimeMillis(), 0);
 			System.out.println("startSleepTime = " + startSleepTime);
@@ -67,58 +67,52 @@ public class KakomimasuAI {
                 // 盤面をStateに変換する
                 var width = game.get("field").get("width").asInt();
                 var height = game.get("field").get("height").asInt();
-
-                var state = new State(width, height);
-                state.END_TURN = game.get("totalTurn").asInt();
+                var endTurn = game.get("totalTurn").asInt();
+                var state = new State(width, height, endTurn);
                 state.turn = game.get("turn").asInt();
                 state.character.x = agent.get("x").asInt();
                 state.character.y = agent.get("y").asInt();
                 var points = game.get("field").get("points");
                 var tiles = game.get("field").get("tiles");
-                for (var y = 0; y < state.H; y++) {
-                    for (var x = 0; x < state.W; x++) {
-                        var idx = y + state.W * x;
+                for (var y = 0; y < state.h; y++) {
+                    for (var x = 0; x < state.w; x++) {
+                        var idx = state.w * y + x;
                         var tile = tiles.get(idx);
-                        state.points[y][x] = points.get(idx).asInt();
-                        /*
-                        var point = objectMapper.createObjectNode()
-                                .put("point", points.get(idx).asInt())
-                                .put("type", tile.get("type").asText())
-                                .put("player", tile.get("player").asInt());
-                        board[y][x] = point;
-                        */    
+                        var type = tile.get("type").asInt();
+                        var player = tile.get("player").asInt();
+                        var point = points.get(idx).asInt();
+                        var newPoint = 0;
+                        if (!(type == 1 && player == 0)) {
+                            newPoint = point;
+                        }
+                        state.points[y][x] = newPoint;
                     }
                 }
-                System.out.println("turn: " + state.turn);
-                var ss = new StringBuilder();
-                for (var y = 0; y < state.H; y++) {
-                    for (var x = 0; x < state.W; x++) {
-                        ss.append(String.format("%3d", state.points[y][x]));
-                    }
-                    ss.append("\n");
-                }
-                // System.out.print(ss);
+                state.print();
 
                 // BeamSearch
+                var bestdx = 0;
+                var bestdy = 0;
+                
+                var beamStartTime = System.currentTimeMillis();
                 if (state.character.x != -1) {
-                    var beamDepth = 2;
-                    var beamWidth = 2;
+                    var beamWidth = 10000;
+                    var beamDepth = 30;
                     var nowBeam = new PriorityQueue<State>(Comparator.comparingLong(s -> -s.evaluatedScore));
                     State bestState = null;
                     nowBeam.add(state);
-                    System.out.println("nowBeam.size = " + nowBeam.size());
                     for (var t = 0; t < beamDepth; t++) {
+                        // System.out.println("depth: " + t);
                         var nextBeam = new PriorityQueue<State>(Comparator.comparingLong(s -> -s.evaluatedScore));
                         for (var i = 0; i < beamWidth; i++) {
+                            // System.out.print(i + " ");
                             if (nowBeam.isEmpty()) {
                                 break;
                             }
                             var nowState = nowBeam.poll();
-                            System.out.println("nowState.character = " + nowState.character.x + " " + nowState.character.y);
                             var legalActions = nowState.legalActions();
-                            System.out.println("legalActions.size() = " + legalActions.size());
                             for (var action : legalActions) {
-                                var nextState = state.clone();
+                                var nextState = nowState.clone();
                                 nextState.advance(action);
                                 nextState.evaluateScore();
                                 if (t == 0) {
@@ -128,15 +122,16 @@ public class KakomimasuAI {
                             }
                         }
                         nowBeam = new PriorityQueue<>(nextBeam);
-                        System.out.println("nextBeam.size = " + nextBeam.size());
                         bestState = nowBeam.peek();
-                        System.out.println("bestState = " + bestState);
                         if (bestState.isDone()) {
                             break;
                         }
                     }
-                    System.out.println("bestState.firstAction = " + bestState.firstAction);
+                    bestdx = State.dx[bestState.firstAction];
+                    bestdy = State.dy[bestState.firstAction];
                 }
+                var beamEndTime = System.currentTimeMillis();
+                System.out.println("beamTime = " + (beamEndTime - beamStartTime));
 
                 // 忍者の動きの送信
                 var acitonPayload = new HashMap<>();
@@ -144,11 +139,10 @@ public class KakomimasuAI {
 				if (state.character.x == -1) {
 					action1 = Map.of("agentId", 0, "type", "PUT", "x", 4, "y", 4);
 				} else {
-					var nx = Math.random() > 0.5 ? state.character.x-1 : state.character.x+1;
-					var ny = Math.random() > 0.5 ? state.character.y-1 : state.character.y+1;
+					var nx = state.character.x + bestdx;
+					var ny = state.character.y + bestdy;
 					action1 = Map.of("agentId", 0, "type", "MOVE", "x", nx, "y", ny);
 				}
-				System.out.println(action1);
 				if (action1 != null) {
 					var actions = List.of(action1);
 					acitonPayload.put("actions", actions);
@@ -158,7 +152,7 @@ public class KakomimasuAI {
 					var actionRequest = HttpRequest.newBuilder().uri(actionURL).method("PATCH", actionBody).headers(actionHeaders).build();
 					client.send(actionRequest, textBodyHandler);
 				}
-                var sleepTime = Math.max(start * 1000 + (long) (opsec * 1000 + trsec * 1000) * state.turn - System.currentTimeMillis(), 0);
+                var sleepTime = Math.max(start + (long) (opsec + trsec) * state.turn - System.currentTimeMillis(), 0);
                 Thread.sleep(sleepTime);
             }
         }
@@ -170,20 +164,25 @@ public class KakomimasuAI {
 }
 
 class Coord {
-    int x, y;
+    int y, x;
 
-    Coord(int x, int y) {
-        this.x = x;
+    Coord(int y, int x) {
         this.y = y;
+        this.x = x;
+    }
+
+    @Override
+    public String toString() {
+        return "(" + x + ", " + y + ")";
     }
 }
 
 class State implements Cloneable {
     static int[] dx = {1, -1, 0, 0};
     static int[] dy = {0, 0, 1, -1};
-    int H = 3;
-    int W = 4;
-    int END_TURN = 4;
+    final int h;
+    final int w;
+    final int END_TURN;
 
     int[][] points;
     int turn = 0;
@@ -192,10 +191,11 @@ class State implements Cloneable {
     long evaluatedScore = 0;
     int firstAction = -1;
 
-    State(int w, int h) {
-        this.W = w;
-        this.H = h;
-        this.points = new int[H][W];
+    State(int h, int w, int endTurn) {
+        this.h = h;
+        this.w = w;
+        this.END_TURN = endTurn;
+        this.points = new int[h][w];
     }
 
     boolean isDone() {
@@ -222,7 +222,7 @@ class State implements Cloneable {
         for (var action = 0; action < 4; action++) {
             var ty = this.character.y + dy[action];
             var tx = this.character.x + dx[action];
-            if (ty >= 0 && ty < H && tx >= 0 && tx < W) {
+            if (ty >= 0 && ty < h && tx >= 0 && tx < w) {
                 actions.add(action);
             }
         }
@@ -231,12 +231,30 @@ class State implements Cloneable {
 
     @Override
     protected State clone() {
-        var nextState = new State(this.W, this.H);
+        var nextState = new State(this.w, this.h, this.END_TURN);
         nextState.character = new Coord(this.character.y, this.character.x);
-        nextState.points = Arrays.stream(this.points).map(int[]::clone).toArray(int[][]::new);
+        for (var y = 0; y < this.h; y++) {
+            for (var x = 0; x < this.w; x++) {
+                nextState.points[y][x] = this.points[y][x];
+            }
+        }
         nextState.turn = this.turn;
         nextState.gameScore = this.gameScore;
         nextState.firstAction = this.firstAction;
+        nextState.evaluatedScore = this.evaluatedScore;
         return nextState;
+    }
+
+    void print() {
+        System.out.println("turn: " + turn);
+        var ss = new StringBuilder();
+        for (var y = 0; y < h; y++) {
+            for (var x = 0; x < w; x++) {
+                ss.append(String.format("%3d", points[y][x]));
+            }
+            ss.append("\n");
+        }
+        System.out.println(ss);
+        System.out.println();
     }
 }
