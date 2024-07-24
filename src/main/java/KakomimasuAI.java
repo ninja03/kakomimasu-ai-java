@@ -36,10 +36,10 @@ public class KakomimasuAI {
                     break;
                 }
                 Thread.sleep(100);
-            }            
-            var start = game.get("startedAtUnixTime").asLong() * 1000;
-            var opsec = game.get("operationSec").asInt() * 1000;
-            var trsec = game.get("transitionSec").asInt() * 1000;
+            }        
+            var start = (long)game.get("startedAtUnixTime").asLong() * 1000;
+            var opsec = (long)game.get("operationSec").asInt() * 1000L;
+            var trsec = (long)game.get("transitionSec").asInt() * 1000L;
             // 1ターン目を待つ
             var startSleepTime = Math.max(start - System.currentTimeMillis(), 0);
 			System.out.println("startSleepTime = " + startSleepTime);
