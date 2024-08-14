@@ -17,7 +17,7 @@ public class KakomimasuAI {
 
     public JsonNode createGame(HttpClient client) throws Exception {
         // ゲームを作成
-        var startURL = URI.create(baseUrl + "/v1/matches/ai/players");
+        var startURL = URI.create(baseUrl + "/v1/matches/free/players");
         var startPayload = Map.of("guestName", "☕Javaくん", "aiName", "a1", "boardName", "A-1", "nAgent", 1);
         var startHeaders = new String[] {"Content-Type", "application/json"};
         var startBody = HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(startPayload));
@@ -54,8 +54,8 @@ public class KakomimasuAI {
         }
     }
 
-    public State createState(JsonNode game) {
-        var agent = game.get("players").get(0).get("agents").get(0);
+    public State createState(JsonNode game, int index) {
+        var agent = game.get("players").get(index).get("agents").get(0);
         // 盤面をStateに変換する
         var width = game.get("field").get("width").asInt();
         var height = game.get("field").get("height").asInt();
@@ -76,10 +76,10 @@ public class KakomimasuAI {
                 var player = tile.get("player").asInt();
                 var point = points.get(idx).asInt();
                 var newPoint = 0;
-                if (!(type == 1 && player == 0)) {
+                if (!(type == 1 && player == index)) {
                     newPoint = point;
                 }
-                state.enemyTiles[y][x] = type == 1 && player == 1;
+                state.enemyTiles[y][x] = type == 1 && player == (index == 0 ? 1 : 0);
                 state.points[y][x] = newPoint;
             }
         }
@@ -94,7 +94,7 @@ public class KakomimasuAI {
         var beamStartTime = System.currentTimeMillis();
         if (state.character.x != -1) {
             var beamWidth = 10000;
-            var beamDepth = 10;
+            var beamDepth = 20;
             var nowBeam = new PriorityQueue<State>(Comparator.comparingLong(s -> -s.evaluatedScore));
             State bestState = null;
             nowBeam.add(state);
@@ -147,6 +147,7 @@ public class KakomimasuAI {
             var game = createGame(client);
             var gameId = game.get("gameId").asText();
             var pic = game.get("pic").asText();
+            var index = game.get("index").asInt();
             game = waitRedNinja(client, gameId);
             var start = (long)game.get("startedAtUnixTime").asLong() * 1000;
             var opsec = (long)game.get("operationSec").asInt() * 1000L;
@@ -164,7 +165,7 @@ public class KakomimasuAI {
                 if (status.equals("ended")) {
                     break;
                 }
-                var state = createState(game);
+                var state = createState(game, index);
                 state.print();
 
                 // 忍者の動きを決定
@@ -173,7 +174,12 @@ public class KakomimasuAI {
                 // 忍者の動きの送信
                 Map<String, Object> action1 = null;
 				if (state.character.x == -1) {
-					action1 = Map.of("agentId", 0, "type", "PUT", "x", 4, "y", 4);
+					action1 = Map.of(
+                        "agentId", 0,
+                        "type", "PUT",
+                        "x", Math.floor(Math.random() * state.w),
+                        "y", Math.floor(Math.random() * state.h)
+                    );
 				} else {
 					var nx = state.character.x + bestAction[0];
 					var ny = state.character.y + bestAction[1];
